@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
-/* Esto es para que el fondo no sea blanco aburrido y se vea profesional */
 body {
-  @apply bg-slate-50 antialiased;
+  background-color: var(--color-slate-50);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   margin: 0;
 }
 

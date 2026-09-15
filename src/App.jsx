@@ -22,10 +22,10 @@ import {
 } from 'lucide-react';
 import Login from './Login';
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://afvlnosqgzcdhzonkabq.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmdmxub3NxZ3pjZGh6b25rYWJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NDcxOTksImV4cCI6MjA5NDEyMzE5OX0.vhod6ZZUpV_n0Gq_5Bzxvj9OU95QHpWOI4z5LVpkb0I';
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 function App() {
   // --- CONTROL DE ACCESO ---
