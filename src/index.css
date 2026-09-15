@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+/* Esto es para que el fondo no sea blanco aburrido y se vea profesional */
+body {
+  @apply bg-slate-50 antialiased;
+  margin: 0;
+}
+
+#root {
+  width: 100%;
+}
