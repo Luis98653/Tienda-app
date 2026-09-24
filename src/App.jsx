@@ -233,6 +233,7 @@ function App() {
         if (usuario && usuario.id && usuario.usuario && usuario.rol) {
           setUsuarioLogueado(usuario);
           fetchClientes();
+          fetchVentas();
         } else {
           localStorage.removeItem('usuario_hogarsys');
         }
@@ -252,6 +253,7 @@ function App() {
 
       try {
         await fetchProductos();
+        await fetchVentas();
         if (pestana === 'caja') await fetchVentas();
         if (pestana === 'personal' && usuarioLogueado.rol === 'admin') await fetchUsuarios();
         if (pestana === 'clientes') await fetchClientes();
@@ -657,14 +659,39 @@ function App() {
   }, [ventasDia]);
 
   const productosFiltrados = useMemo(() => {
-    const texto = busqueda.trim().toLowerCase();
+    // Función auxiliar para quitar tildes, mayúsculas y espacios extra
+    const normalizarTexto = (str) => {
+      if (!str) return '';
+      return str
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, ""); // Quita tildes/acentos
+    };
+
+    const busquedaLimpia = normalizarTexto(busqueda.trim());
+    
+    // Separamos la búsqueda por cada palabra ingresada (ej: ["balanza", "40", "nationalizer"])
+    const palabrasBusqueda = busquedaLimpia.split(/\s+/).filter(Boolean);
+
     const resultado = productos.filter(p => {
-      const coincideTexto = !texto || (p.nombre || '').toLowerCase().includes(texto);
+      const nombreProducto = normalizarTexto(p.nombre);
+      
+      // También creamos una versión sin espacios para capturar "40kg" vs "40 kg"
+      const nombreSinEspacios = nombreProducto.replace(/\s+/g, '');
+
+      // Comprobar que TODAS las palabras buscadas estén en el nombre del producto
+      const coincideTexto = palabrasBusqueda.length === 0 || palabrasBusqueda.every(palabra => {
+        const palabraSinEspacio = palabra.replace(/\s+/g, '');
+        return nombreProducto.includes(palabra) || nombreSinEspacios.includes(palabraSinEspacio);
+      });
+
+      // Filtro de Stock
       const stock = Number(p.stock) || 0;
       const coincideStock = filtroStock === 'todos'
         || (filtroStock === 'agotado' && stock === 0)
         || (filtroStock === 'bajo' && stock > 0 && stock <= 5)
         || (filtroStock === 'disponible' && stock > 5);
+
       return coincideTexto && coincideStock;
     });
 
@@ -811,14 +838,23 @@ function App() {
               <div className="space-y-4 sm:space-y-6">
                 <div className="bg-white p-3 sm:p-5 rounded-2xl sm:rounded-[2rem] border shadow-sm space-y-3">
                   <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                    <input
-                      className="w-full py-3 pl-11 pr-4 rounded-xl sm:rounded-2xl bg-slate-50 border-none outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
-                      placeholder="Buscar producto por nombre..."
-                      value={busqueda}
-                      onChange={e => setBusqueda(e.target.value)}
-                    />
-                  </div>
+  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+  <input
+    className="w-full py-3 pl-11 pr-10 rounded-xl sm:rounded-2xl bg-slate-50 border-none outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base font-bold text-slate-700"
+    placeholder="Buscar por nombre, marca o especificación (ej. balanza 40kg)..."
+    value={busqueda}
+    onChange={e => setBusqueda(e.target.value)}
+  />
+  {busqueda && (
+    <button 
+      onClick={() => setBusqueda('')}
+      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full bg-slate-200"
+    >
+      <X size={14} />
+    </button>
+  )}
+</div>
+                  
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1">
                     <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border sm:border-none">
                       <SlidersHorizontal size={14} className="text-slate-400 shrink-0" />
