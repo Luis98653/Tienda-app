@@ -59,38 +59,52 @@ function App() {
   const [limiteML, setLimiteML] = useState(5);
   const netRef = useRef(null);
 
-  // FUNCIÓN PARA ENTRENAR EL MODELO DE ML
+  // 1. ENTRENAMIENTO CON PONDERACIÓN REALISTA
   const entrenarModeloML = useCallback((ventas, productosLista) => {
-    if (!ventas || ventas.length === 0 || !productosLista || productosLista.length === 0) return false;
+    if (!productosLista || productosLista.length === 0) return false;
 
     if (!netRef.current) {
-      netRef.current = new brain.NeuralNetwork({ hiddenLayers: [4, 4] });
+      netRef.current = new brain.NeuralNetwork({ hiddenLayers: [6, 6] });
     }
 
-    // Buscamos cuál es el producto con más ventas registradas para tomarlo como base (máximo relativo)
-    const ventasPorProducto = productosLista.map(p => 
-      ventas.filter(v => v.nombre_producto === p.nombre).length
+    // Identificamos el máximo de ventas registradas por un solo producto
+    const conteoVentas = productosLista.map(p => 
+      (ventas || []).filter(v => v.nombre_producto === p.nombre).length
     );
-    const maxVentas = Math.max(...ventasPorProducto, 1);
+    const maxVentasReales = Math.max(...conteoVentas, 1);
 
     const datosEntrenamiento = productosLista.map(producto => {
-      const totalVentasProd = ventas.filter(v => v.nombre_producto === producto.nombre).length;
-      
+      const ventasProd = (ventas || []).filter(v => v.nombre_producto === producto.nombre).length;
+      const stock = Number(producto.stock) || 0;
+      const precio = Number(producto.precio_lista) || 0;
+
+      // --- ALGORITMO DE PONDERACIÓN REALISTA DE DEMANDA ---
+      let pesoDemanda = 0;
+
+      if (ventasProd > 0) {
+        // Si tiene ventas reales, obtiene entre 0.50 y 1.00 de puntuación base
+        pesoDemanda = 0.5 + (0.5 * (ventasProd / maxVentasReales));
+      } else {
+        // Si no tiene ventas aún, la IA proyecta según precio accesible y volumen de stock
+        const factorStock = Math.min(stock / 50, 0.25); // hasta 0.25
+        const factorPrecio = precio > 0 && precio <= 200 ? 0.20 : (precio <= 500 ? 0.12 : 0.05);
+        pesoDemanda = factorStock + factorPrecio + 0.05; // Rango creíble entre 0.10 y 0.45
+      }
+
       return {
         input: { 
-          stockActual: Math.min((Number(producto.stock) || 0) / 100, 1),
-          precio: Math.min((Number(producto.precio_lista) || 0) / 1000, 1) 
+          stockActual: Math.min(stock / 100, 1),
+          precio: Math.min(precio / 1000, 1) 
         },
         output: { 
-          // Normalización dinámica basada en el producto más vendido
-          demandaEstimada: Math.max(0.01, totalVentasProd / maxVentas)
+          demandaEstimada: Math.min(Math.max(pesoDemanda, 0.05), 1)
         }
       };
     });
 
     netRef.current.train(datosEntrenamiento, {
-      iterations: 1500,
-      errorThresh: 0.01,
+      iterations: 2000,
+      errorThresh: 0.005,
       log: false
     });
 
@@ -98,40 +112,59 @@ function App() {
     return true;
   }, []);
 
-  // FUNCIÓN PARA PREDECIR UN PRODUCTO INDIVIDUAL
+  // 2. PREDECIR DEMANDA INDIVIDUAL (PONDERACIÓN MENSUAL A 30 DÍAS)
   const predecirDemandaManual = useCallback((stockInput, precioInput) => {
     if (!netRef.current) return 0;
 
+    const stock = Number(stockInput) || 0;
+    const precio = Number(precioInput) || 0;
+
     const resultado = netRef.current.run({
-      stockActual: Math.min((Number(stockInput) || 0) / 100, 1),
-      precio: Math.min((Number(precioInput) || 0) / 1000, 1)
+      stockActual: Math.min(stock / 100, 1),
+      precio: Math.min(precio / 1000, 1)
     });
 
-    // Multiplicamos por un rango realista proyectado a 30 días (ej. hasta 25-30 unidades)
-    const factorEscala = 30;
-    const unidades = Math.round((resultado.demandaEstimada || 0) * factorEscala);
-    
-    // Retornamos al menos 1 o el valor calculado
-    return Math.max(1, unidades);
+    const valorRed = resultado.demandaEstimada || 0;
+
+    // Escalamos a una proyección mensual creíble de hasta 35 unidades para los top
+    const unidadesProyectadas = Math.round(valorRed * 35);
+
+    return Math.max(1, unidadesProyectadas);
   }, []);
 
-  // FUNCIÓN PARA GENERAR EL RANKING DE DEMANDA
+  // 3. GENERACIÓN DEL RANKING Y CÁLCULO DE REABASTECIMIENTO
   const obtenerRankingDemandaML = useCallback((productosLista) => {
     if (!modeloMLCargado || !productosLista || productosLista.length === 0) return [];
 
     const listaPredicciones = productosLista.map(producto => {
-      const demandaEstimada = predecirDemandaManual(producto.stock, producto.precio_lista) || 0;
+      const stock = Number(producto.stock) || 0;
+      const ventasReales = (ventasDia || []).filter(v => v.nombre_producto === producto.nombre).length;
+      
+      // Proyección base de la red neuronal
+      let demandaEstimada = predecirDemandaManual(stock, producto.precio_lista);
+
+      // Si el producto tiene ventas reales registradas, garantizamos que su proyección escale proporcionalmente
+      if (ventasReales > 0) {
+        demandaEstimada = Math.max(demandaEstimada, (ventasReales * 3) + 5);
+      }
+
+      // Cálculo exacto del déficit de inventario
+      const faltaRellenar = Math.max(0, demandaEstimada - stock);
+
       return {
         id: producto.id,
         nombre: producto.nombre,
-        stockActual: producto.stock,
+        stockActual: stock,
         precio: producto.precio_lista,
-        demandaPredicha: demandaEstimada
+        ventasHistoricas: ventasReales,
+        demandaPredicha: demandaEstimada,
+        cantidadARellenar: faltaRellenar
       };
     });
 
+    // Ordenamiento estricto de Mayor a Menor demanda proyectada (#1 Arriba)
     return listaPredicciones.sort((a, b) => b.demandaPredicha - a.demandaPredicha);
-  }, [modeloMLCargado, predecirDemandaManual]);
+  }, [modeloMLCargado, predecirDemandaManual, ventasDia]);
 
   // AUTO-ENTRENAMIENTO AL OBTENER LAS VENTAS ALMACENADAS DE SUPABASE
   useEffect(() => {
