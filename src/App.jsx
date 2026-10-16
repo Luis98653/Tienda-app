@@ -61,41 +61,36 @@ function App() {
 
   // FUNCIÓN PARA ENTRENAR EL MODELO DE ML
   const entrenarModeloML = useCallback((ventas, productosLista) => {
-    if (!productosLista || productosLista.length === 0) return false;
+    if (!ventas || ventas.length === 0 || !productosLista || productosLista.length === 0) return false;
 
     if (!netRef.current) {
-      netRef.current = new brain.NeuralNetwork({ hiddenLayers: [6, 6] });
+      netRef.current = new brain.NeuralNetwork({ hiddenLayers: [4, 4] });
     }
 
+    // Buscamos cuál es el producto con más ventas registradas para tomarlo como base (máximo relativo)
+    const ventasPorProducto = productosLista.map(p => 
+      ventas.filter(v => v.nombre_producto === p.nombre).length
+    );
+    const maxVentas = Math.max(...ventasPorProducto, 1);
+
     const datosEntrenamiento = productosLista.map(producto => {
-      const totalVentasProd = (ventas || []).filter(v => v.nombre_producto === producto.nombre).length;
-      const stock = Number(producto.stock) || 0;
-      const precio = Number(producto.precio_lista) || 0;
-
-      // Factor Heurístico de Demanda: Combina el historial de ventas reales
-      // con una estimación basada en la rotación según el stock y nivel de precio
-      const factorHistorico = totalVentasProd * 2;
-      const factorRotacionStock = Math.min(stock * 0.4, 15);
-      const factorPrecio = precio > 0 && precio < 200 ? 5 : 2;
-
-      const estimacionDemanda = factorHistorico > 0 
-        ? factorHistorico 
-        : (factorRotacionStock + factorPrecio);
-
+      const totalVentasProd = ventas.filter(v => v.nombre_producto === producto.nombre).length;
+      
       return {
         input: { 
-          stockActual: Math.min(stock / 100, 1),
-          precio: Math.min(precio / 1000, 1) 
+          stockActual: Math.min((Number(producto.stock) || 0) / 100, 1),
+          precio: Math.min((Number(producto.precio_lista) || 0) / 1000, 1) 
         },
         output: { 
-          demandaEstimada: Math.min(estimacionDemanda / 50, 1)
+          // Normalización dinámica basada en el producto más vendido
+          demandaEstimada: Math.max(0.01, totalVentasProd / maxVentas)
         }
       };
     });
 
     netRef.current.train(datosEntrenamiento, {
-      iterations: 2000,
-      errorThresh: 0.005,
+      iterations: 1500,
+      errorThresh: 0.01,
       log: false
     });
 
@@ -107,22 +102,17 @@ function App() {
   const predecirDemandaManual = useCallback((stockInput, precioInput) => {
     if (!netRef.current) return 0;
 
-    const stock = Number(stockInput) || 0;
-    const precio = Number(precioInput) || 0;
-
     const resultado = netRef.current.run({
-      stockActual: Math.min(stock / 100, 1),
-      precio: Math.min(precio / 1000, 1)
+      stockActual: Math.min((Number(stockInput) || 0) / 100, 1),
+      precio: Math.min((Number(precioInput) || 0) / 1000, 1)
     });
 
-    const demandaDenormalizada = Math.round((resultado.demandaEstimada || 0) * 50);
+    // Multiplicamos por un rango realista proyectado a 30 días (ej. hasta 25-30 unidades)
+    const factorEscala = 30;
+    const unidades = Math.round((resultado.demandaEstimada || 0) * factorEscala);
     
-    // Si la red calcula un valor muy bajo, calcula un mínimo proporcional al stock disponible
-    if (demandaDenormalizada <= 1 && stock > 0) {
-      return Math.max(2, Math.round(stock * 0.3));
-    }
-
-    return Math.max(1, demandaDenormalizada);
+    // Retornamos al menos 1 o el valor calculado
+    return Math.max(1, unidades);
   }, []);
 
   // FUNCIÓN PARA GENERAR EL RANKING DE DEMANDA
