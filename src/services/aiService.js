@@ -94,34 +94,24 @@ const extraerJson = contenido => {
  * HELPER: PETICIÓN A THE HIVE AI API (CORREGIDO PARA DEEPSEEK)
  * ============================================================
  */
-const consultarHive = async (systemPrompt, userPrompt, apiKey, maxTokens = 800) => {
-  console.log("📡 [consultarHive] Petición enviada a modelo:", HIVE_MODEL);
+const consultarHive = async (systemPrompt, userPrompt, apiKeyDummy = "", maxTokens = 1500) => {
+  console.log("📡 [consultarHive] Petición enviada al backend interno /api/chat");
 
   const controlador = new AbortController();
-  const temporizador = setTimeout(() => controlador.abort(), HIVE_TIMEOUT_MS);
+  const temporizador = setTimeout(() => controlador.abort(), HIVE_TIMEOUT_MS || 25000);
 
   try {
-    const response = await fetch(HIVE_API_URL, {
+    // Apuntamos al endpoint interno de Vercel (el backend lee la API Key en privado)
+    const response = await fetch("/api/chat", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey.trim()}`,
         "Content-Type": "application/json"
       },
       signal: controlador.signal,
       body: JSON.stringify({
-        model: HIVE_MODEL,
-        messages: [
-          {
-            role: "system",
-            content: `${systemPrompt}\n\nResponde ÚNICAMENTE en formato JSON. Ejemplo de formato:\n{"promociones":[]}`
-          },
-          {
-            role: "user",
-            content: userPrompt
-          }
-        ],
-        max_completion_tokens: maxTokens,
-        stream: false
+        systemPrompt: `${systemPrompt}\n\nResponde ÚNICAMENTE en formato JSON. Ejemplo de formato:\n{"promociones":[]}`,
+        userPrompt,
+        maxTokens
       })
     });
 
@@ -131,7 +121,7 @@ const consultarHive = async (systemPrompt, userPrompt, apiKey, maxTokens = 800) 
     if (response.ok) {
       const data = await response.json();
       
-      // Captura el contenido sea cual sea la estructura devuelta por The Hive / DeepSeek
+      // Mantiene intacta la captura de contenido crudo o reasoning_content
       const choice = data?.choices?.[0];
       const contenido = 
         choice?.message?.content || 
@@ -151,7 +141,7 @@ const consultarHive = async (systemPrompt, userPrompt, apiKey, maxTokens = 800) 
       }
     } else {
       const errorText = await response.text();
-      console.error(`🚨 [ERROR THE HIVE ${response.status}]:`, errorText);
+      console.error(`🚨 [ERROR SERVERLESS ${response.status}]:`, errorText);
     }
   } catch (error) {
     clearTimeout(temporizador);
