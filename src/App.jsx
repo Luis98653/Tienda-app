@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { CarritoModal } from './CarritoModal';
 import { createClient } from '@supabase/supabase-js';
+import { CopilotoVentasModal } from './CopilotoVentasModal';
+import { EstrategaPromociones } from './EstrategaPromociones';
+import { DiagnosticoNegocio } from './DiagnosticoNegocio';
 import { 
   PlusCircle, 
   ShoppingBag, 
@@ -587,73 +591,115 @@ function App() {
     }
   };
 
-  // --- CARRITO Y PROCESO DE VENTA ---
-  const agregarAlCarrito = (producto) => {
-    const stock = Number(producto.stock) || 0;
-    if (stock <= 0) {
-      mostrarMensaje('Este producto está agotado.');
-      return;
+// =====================================================
+// CARRITO
+// =====================================================
+
+const agregarAlCarrito = (producto) => {
+  const stock = Number(producto.stock) || 0;
+
+  if (stock <= 0) {
+    mostrarMensaje('Este producto está agotado.');
+    return;
+  }
+
+  setCarrito((prev) => {
+    const existente = prev.find((item) => item.id === producto.id);
+
+    if (existente) {
+      const cantidadActual = Number(existente.cantidad) || 0;
+
+      if (cantidadActual >= stock) {
+        mostrarMensaje(`No puedes agregar más de ${stock} unidades.`);
+        return prev;
+      }
+
+      return prev.map((item) =>
+        item.id === producto.id
+          ? {
+              ...item,
+              cantidad: cantidadActual + 1,
+            }
+          : item
+      );
     }
 
-    setCarrito(prev => {
-      const existente = prev.find(item => item.id === producto.id);
-      if (existente) {
-        if (existente.cantidad >= stock) {
-          mostrarMensaje(`No puedes agregar más de ${stock} unidades.`);
-          return prev;
-        }
-        return prev.map(item => item.id === producto.id ? { ...item, cantidad: item.cantidad + 1 } : item);
-      }
-      return [...prev, {
+    return [
+      ...prev,
+      {
         id: producto.id,
         nombre: producto.nombre,
         imagen_url: producto.imagen_url || '',
         precio_lista: Number(producto.precio_lista) || 0,
         precioUnitario: Number(producto.precio_lista) || 0,
         cantidad: 1,
-        stockDisponible: stock
-      }];
-    });
-    setMostrarCarrito(true);
-  };
+        stockDisponible: stock,
+      },
+    ];
+  });
 
-  const cambiarCantidadCarrito = (id, delta) => {
-    setCarrito(prev => prev.map(item => {
-      if (item.id !== id) return item;
-      const siguiente = item.cantidad + delta;
-      if (siguiente < 1) return item;
-      if (siguiente > item.stockDisponible) {
-        mostrarMensaje(`Stock máximo disponible: ${item.stockDisponible}.`);
-        return item;
-      }
-      return { ...item, cantidad: siguiente };
-    }));
-  };
+  setMostrarCarrito(true);
+};
 
-  const cambiarPrecioCarrito = (id, valor) => {
-    setCarrito(prev => prev.map(item => item.id === id ? { ...item, precioUnitario: valor } : item));
-  };
 
-  const quitarDelCarrito = (id) => {
-    setCarrito(prev => prev.filter(item => item.id !== id));
-  };
+const cambiarCantidadCarrito = (id, delta) => {
+  setCarrito((prev) =>
+    prev.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            cantidad: Math.max(
+              1,
+              Number(item.cantidad || 0) + delta
+            ),
+          }
+        : item
+    )
+  );
+};
 
-  const vaciarCarrito = () => {
-    setCarrito([]);
-    setClienteSeleccionadoVenta('');
-    setDireccion('');
-    setTipoEntrega('tienda');
-    setMostrarCarrito(false);
-  };
+const cambiarPrecioCarrito = (id, valor) => {
+  setCarrito((prev) =>
+    prev.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            precioUnitario: valor === '' ? '' : Number(valor),
+          }
+        : item
+    )
+  );
+};
 
-  const subtotalCarrito = useMemo(() => carrito.reduce(
-    (total, item) => total + (Number(item.precioUnitario) || 0) * item.cantidad,
-    0
-  ), [carrito]);
+const quitarDelCarrito = (id) => {
+  setCarrito((prev) => prev.filter((item) => item.id !== id));
+};
 
-  const unidadesCarrito = useMemo(() => carrito.reduce(
-    (total, item) => total + item.cantidad, 0
-  ), [carrito]);
+
+const vaciarCarrito = () => {
+  setCarrito([]);
+  setClienteSeleccionadoVenta('');
+  setDireccion('');
+  setTipoEntrega('tienda');
+  setMostrarCarrito(false);
+};
+
+
+const subtotalCarrito = useMemo(() => {
+  return carrito.reduce((total, item) => {
+    const precio = Number(item.precioUnitario) || 0;
+    const cantidad = Number(item.cantidad) || 0;
+
+    return total + precio * cantidad;
+  }, 0);
+}, [carrito]);
+
+
+const unidadesCarrito = useMemo(() => {
+  return carrito.reduce((total, item) => {
+    return total + (Number(item.cantidad) || 0);
+  }, 0);
+}, [carrito]);
 
   const realizarVenta = async () => {
     if (!usuarioLogueado || procesandoVenta || carrito.length === 0) return;
@@ -663,20 +709,44 @@ function App() {
       return;
     }
 
-    const items = carrito.map(item => ({
-      ...item,
-      precioUnitario: Number(item.precioUnitario)
-    }));
+ const items = carrito.map((item) => ({
+  ...item,
+  cantidad: Number(item.cantidad) || 0,
+  precioUnitario: Number(item.precioUnitario) || 0
+}));
 
-    const precioInvalido = items.find(item => !Number.isFinite(item.precioUnitario) || item.precioUnitario <= 0);
-    if (precioInvalido) {
-      mostrarMensaje(`Revisa el precio de ${precioInvalido.nombre}.`);
-      return;
-    }
+const precioInvalido = items.find(
+  (item) =>
+    !Number.isFinite(item.precioUnitario) ||
+    item.precioUnitario <= 0
+);
+
+const cantidadInvalida = items.find(
+  (item) =>
+    !Number.isFinite(item.cantidad) ||
+    item.cantidad <= 0
+);
+
+if (cantidadInvalida) {
+  mostrarMensaje(
+    `Cantidad inválida para ${cantidadInvalida.nombre}.`
+  );
+  return;
+}
 
     // 📌 Guardamos el total y unidades antes de vaciar el carrito
-    const unidadesConfirmadas = unidadesCarrito;
-    const subtotalConfirmado = subtotalCarrito;
+    const unidadesConfirmadas = items.reduce(
+  (total, item) => total + Number(item.cantidad),
+  0
+);
+
+const subtotalConfirmado = items.reduce(
+  (total, item) =>
+    total +
+    Number(item.precioUnitario) *
+      Number(item.cantidad),
+  0
+);
 
     setProcesandoVenta(true);
     setErrorApp('');
@@ -923,6 +993,11 @@ function App() {
             {esAdmin && <MenuLink id="personal" icon={Users} label="Personal / Vendedores" />}
             <MenuLink id="caja" icon={BarChart3} label={esAdmin ? "Caja y Reportes" : "Mis Ventas de Hoy"} />
             <MenuLink id="clientes" icon={Contact} label="Clientes" />
+            <MenuLink
+  id="promociones"
+  icon={ShoppingBag}
+  label="Estratega de Promociones"
+/>
           </nav>
 
           <div className="pt-4 border-t">
@@ -1219,6 +1294,7 @@ function App() {
                     <RefreshCw size={15} className={cargando ? 'animate-spin' : ''}/> Actualizar
                   </button>
                 </div>
+                
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
                   <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] border shadow-sm">
@@ -1238,6 +1314,7 @@ function App() {
                     <p className="text-xl sm:text-3xl font-black text-amber-600 mt-1 sm:mt-2">{productosBajoStock.length}</p>
                   </div>
                 </div>
+               
                 {/* ========================================================= */}
 {/* MÓDULO PROFESIONAL DE MACHINE LEARNING & PREDICCIÓN (IA) */}
 {/* ========================================================= */}
@@ -1545,140 +1622,58 @@ function App() {
                 </div>
               </div>
             )}
+            
+            
 
           </div>
+          {/* VISTA: ESTRATEGA DE PROMOCIONES */}
+{/* VISTA: ESTRATEGA DE PROMOCIONES Y AGENTES IA */}
+{pestana === 'promociones' && (
+  <EstrategaPromociones
+    productos={productos}
+    ventas={ventasDia}
+    ingresosHoy={ingresosDeHoy}
+    transaccionesHoy={transaccionesDeHoy}
+    deliveriesHoy={entregasDeliveryHoy}
+    mostrarMensaje={mostrarMensaje}
+  />
+)}
         </main>
       </div>
 
       {/* MODAL CARRITO & CHECKOUT */}
-      {mostrarCarrito && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-end sm:items-center justify-center z-[100] p-0 sm:p-4">
-          <div className="bg-white w-full max-w-2xl max-h-[90vh] sm:max-h-[92vh] overflow-hidden rounded-t-[1.5rem] sm:rounded-[2.5rem] shadow-2xl flex flex-col">
-            
-            {/* ENCABEZADO DEL MODAL */}
-            <div className="p-4 sm:p-6 border-b flex items-center justify-between shrink-0 bg-white">
-              <div>
-                <h3 className="text-lg sm:text-2xl font-black text-slate-800">Carrito de Venta</h3>
-                <p className="text-xs sm:text-sm text-slate-400 font-bold">{unidadesCarrito} unidad(es) · Total S/. {subtotalCarrito.toFixed(2)}</p>
-              </div>
-              <button type="button" onClick={() => setMostrarCarrito(false)} className="p-2 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"><X size={20}/></button>
-            </div>
-            
-            {/* CUERPO DEL MODAL (CON SCROLL) */}
-            <div className="p-3 sm:p-6 overflow-y-auto space-y-3 flex-1">
-              {carrito.length === 0 ? (
-                <div className="text-center py-8 text-slate-400 text-sm font-bold">El carrito está vacío</div>
-              ) : (
-                carrito.map(item => (
-                  <div key={item.id} className="border rounded-xl sm:rounded-2xl p-3 sm:p-4 flex gap-2 sm:gap-3 items-center">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-black text-slate-700 text-xs sm:text-base truncate">{item.nombre}</p>
-                      <div className="mt-1.5 flex items-center gap-1.5">
-                        <button type="button" onClick={() => cambiarCantidadCarrito(item.id, -1)} className="p-1.5 rounded-lg bg-slate-100"><Minus size={14}/></button>
-                        <span className="w-6 text-center font-black text-xs sm:text-sm">{item.cantidad}</span>
-                        <button type="button" onClick={() => cambiarCantidadCarrito(item.id, 1)} className="p-1.5 rounded-lg bg-slate-100"><Plus size={14}/></button>
-                      </div>
-                    </div>
-                    <div className="w-20 sm:w-24">
-                      <label className="text-[8px] sm:text-[9px] uppercase font-black text-slate-400 block">P. Unitario</label>
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        value={item.precioUnitario} 
-                        onChange={e => cambiarPrecioCarrito(item.id, e.target.value)}
-                        className="w-full p-1.5 sm:p-2 bg-slate-50 rounded-lg text-xs font-black border text-right outline-none" 
-                      />
-                    </div>
-                    <div className="text-right">
-                      <p className="font-black text-blue-600 text-xs sm:text-base">S/. {(Number(item.precioUnitario) * item.cantidad).toFixed(2)}</p>
-                    </div>
-                    <button type="button" onClick={() => quitarDelCarrito(item.id)} className="p-1.5 text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
-                  </div>
-                ))
-              )}
+      <CarritoModal
+  mostrarCarrito={mostrarCarrito}
+  setMostrarCarrito={setMostrarCarrito}
 
-              {/* OPCIONES DE MODALIDAD Y DIRECCIÓN */}
-              <div className="space-y-3 pt-2">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-black text-slate-400">Modalidad de Venta</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setTipoEntrega('tienda')}
-                      className={`p-2.5 sm:p-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 border transition-all ${
-                        tipoEntrega === 'tienda' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'
-                      }`}
-                    >
-                      <Store size={15} /> Retiro en Tienda
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTipoEntrega('delivery')}
-                      className={`p-2.5 sm:p-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 border transition-all ${
-                        tipoEntrega === 'delivery' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-slate-600 border-slate-200'
-                      }`}
-                    >
-                      <Truck size={15} /> Envío Delivery
-                    </button>
-                  </div>
-                </div>
+  carrito={carrito}
+  productos={productos}
+  clientesLista={clientesLista}
 
-                {tipoEntrega === 'delivery' && (
-                  <div className="space-y-2 bg-purple-50/50 p-3 rounded-xl border border-purple-100">
-                    <label className="text-[10px] uppercase font-black text-purple-700 flex items-center gap-1">
-                      <MapPin size={12} /> Dirección de Entrega
-                    </label>
-                    
-                    <input 
-                      ref={inputRef} 
-                      type="text" 
-                      value={direccion}
-                      onChange={e => setDireccion(e.target.value)}
-                      placeholder="Ingresa la dirección..." 
-                      className="w-full p-2.5 bg-white rounded-lg border border-slate-200 text-xs font-bold text-slate-700 shadow-sm"
-                    />
+  unidadesCarrito={unidadesCarrito}
+  subtotalCarrito={subtotalCarrito}
 
-                    <div ref={mapRef} className="w-full h-28 sm:h-36 rounded-xl border border-slate-200 bg-slate-200 overflow-hidden" />
-                  </div>
-                )}
+  cambiarCantidadCarrito={cambiarCantidadCarrito}
+  cambiarPrecioCarrito={cambiarPrecioCarrito}
+  quitarDelCarrito={quitarDelCarrito}
 
-                <div>
-                  <label className="text-[10px] uppercase font-black text-slate-400 block mb-1">Cliente Registrado</label>
-                  <select 
-                    value={clienteSeleccionadoVenta} 
-                    onChange={e => setClienteSeleccionadoVenta(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 outline-none"
-                  >
-                    <option value="">Consumidor Final</option>
-                    {clientesLista.map(c => (
-                      <option key={c.id} value={c.nombre}>{c.nombre} {c.documento ? `- ${c.documento}` : ''}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
+  agregarAlCarrito={agregarAlCarrito}
 
-            {/* PIE DE PÁGINA / CONFIRMACIÓN */}
-            <div className="p-4 sm:p-6 border-t bg-slate-50 shrink-0">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[9px] uppercase font-black text-slate-400">Total a pagar</p>
-                  <p className="text-2xl sm:text-3xl font-black text-blue-600">S/. {subtotalCarrito.toFixed(2)}</p>
-                </div>
-                <button 
-                  type="button" 
-                  onClick={realizarVenta} 
-                  disabled={procesandoVenta || carrito.length === 0} 
-                  className="px-5 py-3 sm:px-8 sm:py-4 rounded-xl bg-blue-600 text-white font-black text-xs sm:text-base shadow-lg disabled:bg-slate-300"
-                >
-                  {procesandoVenta ? 'PROCESANDO...' : 'CONFIRMAR VENTA'}
-                </button>
-              </div>
-            </div>
+  tipoEntrega={tipoEntrega}
+  setTipoEntrega={setTipoEntrega}
 
-          </div>
-        </div>
-      )}
+  direccion={direccion}
+  setDireccion={setDireccion}
+
+  clienteSeleccionadoVenta={clienteSeleccionadoVenta}
+  setClienteSeleccionadoVenta={setClienteSeleccionadoVenta}
+
+  procesandoVenta={procesandoVenta}
+  realizarVenta={realizarVenta}
+
+  inputRef={inputRef}
+  mapRef={mapRef}
+/>
 
       {/* MENSAJE ALERTA FLOTANTE */}
       {mensajeApp && (
