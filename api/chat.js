@@ -3,12 +3,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método no permitido' });
   }
 
-  // La API Key se lee en el SERVIDOR (Servidor seguro, no en el navegador)
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  // Intentamos obtener la llave de todas las formas posibles
+  const apiKey = process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY;
 
-  if (!apiKey) {
-    return res.status(500).json({ error: 'API Key no configurada en el servidor' });
-  }
+  // Si aún así no la encuentra, podemos poner la llave de emergencia directamente aquí 
+  // (Solo para salir de dudas y verificar si el problema es estrictamente de Vercel)
+  const finalApiKey = apiKey || '5cYaTd7XujeVIH4qpP+Cew==';
 
   try {
     const { systemPrompt, userPrompt, maxTokens } = req.body;
@@ -17,7 +17,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${finalApiKey}`
       },
       body: JSON.stringify({
         model: 'deepseek-ai/deepseek-v4.1-flash-1017',
