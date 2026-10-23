@@ -3,12 +3,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método no permitido' });
   }
 
-  // Intentamos obtener la llave de todas las formas posibles
-  const apiKey = process.env.DEEPSEEK_API_KEY || process.env.VITE_DEEPSEEK_API_KEY;
-
-  // Si aún así no la encuentra, podemos poner la llave de emergencia directamente aquí 
-  // (Solo para salir de dudas y verificar si el problema es estrictamente de Vercel)
-  const finalApiKey = apiKey || '5cYaTd7XujeVIH4qpP+Cew==';
+  // LLAVE FIJA PARA EVITAR CUALQUIER PROBLEMA CON VERCEL
+  const finalApiKey = '5cYaTd7XujeVIH4qpP+Cew==';
 
   try {
     const { systemPrompt, userPrompt, maxTokens } = req.body;
